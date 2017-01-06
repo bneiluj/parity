@@ -520,7 +520,7 @@ pub fn enact(
 	parent: &Header,
 	last_hashes: Arc<LastHashes>,
 	factories: Factories,
-) -> Result<LockedBlock, Error> {
+) -> Result<ClosedBlock, Error> {
 	{
 		if ::log::max_log_level() >= ::log::LogLevel::Trace {
 			let s = State::from_existing(db.boxed_clone(), parent.state_root().clone(), engine.account_start_nonce(), factories.clone())?;
@@ -542,7 +542,7 @@ pub fn enact(
 	for u in uncles {
 		b.push_uncle(u.clone())?;
 	}
-	Ok(b.close_and_lock())
+	Ok(b.close())
 }
 
 #[inline]
@@ -581,7 +581,7 @@ pub fn enact_verified(
 	parent: &Header,
 	last_hashes: Arc<LastHashes>,
 	factories: Factories,
-) -> Result<LockedBlock, Error> {
+) -> Result<ClosedBlock, Error> {
 	let view = BlockView::new(&block.bytes);
 	enact(&block.header, &block.transactions, &view.uncles(), engine, tracing, db, parent, last_hashes, factories)
 }
@@ -614,7 +614,7 @@ mod tests {
 	) -> Result<LockedBlock, Error> {
 		let block = BlockView::new(block_bytes);
 		let header = block.header();
-		enact(&header, &block.transactions(), &block.uncles(), engine, tracing, db, parent, last_hashes, factories)
+		enact(&header, &block.transactions(), &block.uncles(), engine, tracing, db, parent, last_hashes, factories).map(ClosedBlock::lock)
 	}
 
 	/// Enact the block given by `block_bytes` using `engine` on the database `db` with given `parent` block header. Seal the block aferwards

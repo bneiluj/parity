@@ -343,7 +343,7 @@ impl Client {
 		Arc::new(last_hashes)
 	}
 
-	fn check_and_close_block(&self, block: &PreverifiedBlock) -> Result<LockedBlock, ()> {
+	fn check_and_close_block(&self, block: &PreverifiedBlock) -> Result<ClosedBlock, ()> {
 		let engine = &*self.engine;
 		let header = &block.header;
 
@@ -370,17 +370,17 @@ impl Client {
 			let db = self.state_db.lock().boxed_clone_canon(header.parent_hash());
 
 			let enact_result = enact_verified(block, engine, self.tracedb.read().tracing_enabled(), db, &parent, last_hashes, self.factories.clone());
-			let locked_block = enact_result.map_err(|e| {
+			let closed_block = enact_result.map_err(|e| {
 				warn!(target: "client", "Block import failed for #{} ({})\nError: {:?}", header.number(), header.hash(), e);
 			})?;
 
 			// Final Verification
-			if let Err(e) = self.verifier.verify_block_final(header, locked_block.block().header()) {
+			if let Err(e) = self.verifier.verify_block_final(header, closed_block.block().header()) {
 				warn!(target: "client", "Stage 4 block verification failed for #{} ({})\nError: {:?}", header.number(), header.hash(), e);
 				return Err(());
 			}
 
-			Ok(locked_block)
+			Ok(closed_block)
 		} else {
 			warn!(target: "client", "Block import failed for #{} ({}): Parent not found ({}) ", header.number(), header.hash(), header.parent_hash());
 			Err(())
@@ -445,12 +445,13 @@ impl Client {
 				}
 				if let Ok(closed_block) = self.check_and_close_block(&block) {
 					if self.engine.is_proposal(&block.header) {
+						self.miner.insert_to_sealing_queue(closed_block);
 						self.block_queue.mark_as_good(&[header.hash()]);
 						proposed_blocks.push(block.bytes);
 					} else {
 						imported_blocks.push(header.hash());
 
-						let route = self.commit_block(closed_block, &header.hash(), &block.bytes);
+						let route = self.commit_block(closed_block.lock(), &header.hash(), &block.bytes);
 						import_results.push(route);
 
 						self.report.write().accrue_block(&block);
